@@ -31,6 +31,9 @@ import (
 // ErrNoTable indicates that a chart does not have a matching table.
 type ErrNoTable error
 
+// ErrNoValue indicates that Values does not contain a key with a value
+type ErrNoValue error
+
 // GlobalKey is the name of the Values key that is used for storing global vars.
 const GlobalKey = "global"
 
@@ -375,4 +378,39 @@ func ToRenderValuesCaps(chrt *chart.Chart, chrtVals *chart.Config, options Relea
 func istable(v interface{}) bool {
 	_, ok := v.(map[string]interface{})
 	return ok
+}
+
+// Value takes a yaml path with . notation and returns the value if exists
+func (v Values) PathValue(name string) (interface{}, error) {
+	names := strings.Split(name, ".")
+	vals := v
+	lastVal := v
+	lastKey := ""
+	var finalVal  interface{}
+	for i, n := range names {
+		if _, ok := lastVal[n]; ok {
+			vals = lastVal
+			if i < len(names) - 1 {
+				lastKey = names[i + 1]
+				// Admiral says "its a map!"
+				if _, ok := lastVal[n].(map[string]interface{})[lastKey]; ok {
+					vals = map[string]interface{}{lastKey: lastVal[n].(map[string]interface{})[lastKey]}
+				}else{
+					return nil, ErrNoValue(fmt.Errorf("no map at key %s", lastKey))
+				}
+			}else{
+				if _, ok := lastVal[n]; ok {
+					finalVal = lastVal[n]
+				}else{
+					return nil, ErrNoValue(fmt.Errorf("key not found: %s", n))
+				}
+			}
+			lastVal = vals
+
+		} else {
+			return nil, ErrNoValue(fmt.Errorf("key not found: %s", n))
+		}
+	}
+
+	return finalVal, nil
 }

@@ -71,6 +71,7 @@ type Metadata struct {
 	Icon string `protobuf:"bytes,9,opt,name=icon" json:"icon,omitempty"`
 	// The API Version of this chart.
 	ApiVersion string `protobuf:"bytes,10,opt,name=apiVersion" json:"apiVersion,omitempty"`
+	Condition string `protobuf:"bytes,11,opt,name=condition" json:"condition,omitempty"`
 }
 
 func (m *Metadata) Reset()                    { *m = Metadata{} }

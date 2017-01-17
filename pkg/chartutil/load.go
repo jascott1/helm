@@ -190,7 +190,42 @@ func loadFiles(files []*afile) (*chart.Chart, error) {
 			return c, fmt.Errorf("error unpacking %s in %s: %s", n, c.Metadata.Name, err)
 		}
 
-		c.Dependencies = append(c.Dependencies, sc)
+		// don't add sub-chart if condition is false in values
+		// condition specified in requirements takes precedence over condition in chart
+		loadChart := true
+		var cond string
+
+		if len(sc.Metadata.Condition) > 0 {
+			cond = sc.Metadata.Condition
+		}
+		reqs, err := LoadRequirements(c)
+		if reqs != nil && reqs.Dependencies != nil {
+			for _, r := range reqs.Dependencies{
+				if r.Name == sc.Metadata.Name && len(r.Condition) > 0{
+					cond = r.Condition
+				}
+			}
+		}
+
+		if len(cond) > 0 {
+			// read parent chart yaml values
+			yv, err := ReadValues([]byte(c.Values.Raw))
+			if err != nil {
+				//log.Printf("Warning: could not read values for condition string  %v", err)
+			}
+			// retrieve value
+			vv, err := yv.PathValue(cond)
+			if err != nil {
+				//log.Printf("Warning: could not retrieve condition value: %v", err)
+			}
+			if vv == false{
+				loadChart = false
+			}
+		}
+
+		if loadChart != false{
+			c.Dependencies = append(c.Dependencies, sc)
+		}
 	}
 
 	return c, nil
