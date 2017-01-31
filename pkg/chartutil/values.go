@@ -36,6 +36,7 @@ type ErrNoValue error
 
 // GlobalKey is the name of the Values key that is used for storing global vars.
 const GlobalKey = "global"
+const TagsKey = "tags"
 
 // Values represents a collection of chart values.
 type Values map[string]interface{}
@@ -251,7 +252,55 @@ func coalesceGlobals(dest, src map[string]interface{}) map[string]interface{} {
 	dest[GlobalKey] = dg
 	return dest
 }
+func coalesceTags(dest, src map[string]interface{}) map[string]interface{} {
+	var dg, sg map[string]interface{}
 
+	if destglob, ok := dest[TagsKey]; !ok {
+		dg = map[string]interface{}{}
+	} else if dg, ok = destglob.(map[string]interface{}); !ok {
+		log.Printf("warning: skipping globals because destination %s is not a table.", TagsKey)
+		return dg
+	}
+
+	if srcglob, ok := src[TagsKey]; !ok {
+		sg = map[string]interface{}{}
+	} else if sg, ok = srcglob.(map[string]interface{}); !ok {
+		log.Printf("warning: skipping globals because source %s is not a table.", TagsKey)
+		return dg
+	}
+
+	// EXPERIMENTAL: In the past, we have disallowed globals to test tables. This
+	// reverses that decision. It may somehow be possible to introduce a loop
+	// here, but I haven't found a way. So for the time being, let's allow
+	// tables in globals.
+	for key, val := range sg {
+		if istable(val) {
+			vv := copyMap(val.(map[string]interface{}))
+			if destv, ok := dg[key]; ok {
+				if destvmap, ok := destv.(map[string]interface{}); ok {
+					// Basically, we reverse order of coalesce here to merge
+					// top-down.
+					coalesceTables(vv, destvmap)
+					dg[key] = vv
+					continue
+				} else {
+					log.Printf("Conflict: cannot merge map onto non-map for %q. Skipping.", key)
+				}
+			} else {
+				// Here there is no merge. We're just adding.
+				dg[key] = vv
+			}
+		} else if dv, ok := dg[key]; ok && istable(dv) {
+			// It's not clear if this condition can actually ever trigger.
+			log.Printf("key %s is table. Skipping", key)
+			continue
+		}
+		// TODO: Do we need to do any additional checking on the value?
+		dg[key] = val
+	}
+	dest[TagsKey] = dg
+	return dest
+}
 func copyMap(src map[string]interface{}) map[string]interface{} {
 	dest := make(map[string]interface{}, len(src))
 	for k, v := range src {

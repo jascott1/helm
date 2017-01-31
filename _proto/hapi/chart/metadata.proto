@@ -67,4 +67,7 @@ message Metadata {
 
 	// The condition to check to enable chart
 	string condition = 11;
+
+	// The tags to check to enable chart
+	string tags = 12;
 }

@@ -22,16 +22,15 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"github.com/golang/protobuf/ptypes/any"
 	"io"
 	"io/ioutil"
+	"k8s.io/helm/pkg/ignore"
+	"k8s.io/helm/pkg/proto/hapi/chart"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/golang/protobuf/ptypes/any"
-
-	"k8s.io/helm/pkg/ignore"
-	"k8s.io/helm/pkg/proto/hapi/chart"
 )
 
 // Load takes a string name, tries to resolve it to a file or directory, and then loads it.
@@ -194,36 +193,76 @@ func loadFiles(files []*afile) (*chart.Chart, error) {
 		// condition specified in requirements takes precedence over condition in chart
 		loadChart := true
 		var cond string
-
+		var conds []string
+		var tags []string
+		// check for condition in chart itself
 		if len(sc.Metadata.Condition) > 0 {
-			cond = sc.Metadata.Condition
+			cond = string(sc.Metadata.Condition)
 		}
+		// check for condition in requirements entry
 		reqs, err := LoadRequirements(c)
 		if reqs != nil && reqs.Dependencies != nil {
-			for _, r := range reqs.Dependencies{
-				if r.Name == sc.Metadata.Name && len(r.Condition) > 0{
-					cond = r.Condition
+			for _, r := range reqs.Dependencies {
+
+				if r.Name == sc.Metadata.Name && len(r.Condition) > 0 {
+					cond = string(r.Condition)
+				}
+				if r.Name == sc.Metadata.Name && len(r.Tags) > 0 {
+					tags = r.Tags
+					//log.Fatalf("tags: %v", tags)
+
 				}
 			}
 		}
-
-		if len(cond) > 0 {
-			// read parent chart yaml values
-			yv, err := ReadValues([]byte(c.Values.Raw))
-			if err != nil {
-				//log.Printf("Warning: could not read values for condition string  %v", err)
+		// read parent chart yaml values
+		yv, err := ReadValues([]byte(c.Values.Raw))
+		if err != nil {
+			//log.Printf("Warning: could not read values for condition string  %v", err)
+		}
+		// if values contains the chart's tags but none are true, disable chart
+		if len(tags) > 0 {
+			vt, _ := yv.Table("tags")
+			hasTrue := false
+			hasFalse := false
+			for _, k := range tags {
+				if b, ok := vt[k]; ok {
+					if b == true {
+						hasTrue = true
+					}
+					if b == false {
+						hasFalse = true
+					}
+				}
 			}
-			// retrieve value
-			vv, err := yv.PathValue(cond)
-			if err != nil {
-				//log.Printf("Warning: could not retrieve condition value: %v", err)
-			}
-			if vv == false{
+			if hasTrue == false && hasFalse == true {
 				loadChart = false
 			}
 		}
-
-		if loadChart != false{
+		// if values contains the chart's conditions but none are true, disable chart
+		if len(cond) > 0 {
+			// check for list
+			if strings.Contains(cond, ",") {
+				conds = strings.Split(strings.TrimSpace(cond), ",")
+			} else {
+				conds = []string{strings.TrimSpace(cond)}
+			}
+			for _, b := range conds {
+				if len(b) > 0 {
+					// retrieve value
+					vv, err := yv.PathValue(cond)
+					if err == nil {
+						if vv == true {
+							loadChart = true
+						}
+					}
+					if vv != nil {
+						// got first value, break loop
+						break
+					}
+				}
+			}
+		}
+		if loadChart != false {
 			c.Dependencies = append(c.Dependencies, sc)
 		}
 	}

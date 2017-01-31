@@ -57,6 +57,8 @@ type Dependency struct {
 	Repository string `json:"repository"`
 	// a yaml path that resolves to a boolean, used for enabling/disabling charts (e.g. subchart1.enabled )
 	Condition string
+	// charts can be enabled/disabled as a group using "tags" key in top values.yaml
+	Tags []string
 }
 
 // Requirements is a list of requirements for a chart.
